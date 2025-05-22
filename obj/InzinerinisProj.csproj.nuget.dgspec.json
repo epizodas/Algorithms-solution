@@ -47,6 +47,10 @@
             "EPPlus": {
               "target": "Package",
               "version": "[8.0.5, )"
+            },
+            "ScottPlot": {
+              "target": "Package",
+              "version": "[5.0.55, )"
             }
           },
           "imports": [
