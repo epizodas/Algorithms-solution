@@ -16,13 +16,19 @@ class Program
         var matrixFull = IO.BuildMatrix(places, places.Count);
 
         int startIndex = places.FindIndex(p => p.Number == 5);
-        var (bus1, bus2) = Solver.Greedy(matrixFull, startIndex);
+        //var (bus1, bus2) = Solver.Greedy(matrixFull, startIndex);
         //IO.PrintRoute(bus1, places, "Autobusiukas 1");
         //IO.PrintRoute(bus2, places, "Autobusiukas 2");
-        //IO.PlotRoutes(bus1, bus2, places, "marsrutai.png");
+        //IO.PlotRoutes(bus1, bus2, places, "marsrutai1.png");
 
-        var matrix = IO.BuildMatrix(places, 14);
-        Solver.BranchBound(matrix, startIndex, 10);
+        var matrix = IO.BuildMatrix(places, 11);
+        var (bb_bus1, bb_bus2, time) = Solver.BranchBound(matrix, startIndex);
+
+        IO.PlotRoutes(bb_bus1, bb_bus2, places, "marsrutai2.png");
+        Console.WriteLine(time);
+        Console.WriteLine("Bus1 = " + bb_bus1.Distance);
+        Console.WriteLine("Bus2 = " + bb_bus2.Distance);
+
     }
     public static class Solver
     {
@@ -137,14 +143,12 @@ class Program
         {
             double cost = 0;
             int n = matrix.GetLength(0);
-            // Row reduction
             for (int i = 0; i < n; i++)
             {
                 double rowMin = INF;
                 for (int j = 0; j < n; j++)
                     if (matrix[i, j] < rowMin)
                         rowMin = matrix[i, j];
-
                 if (rowMin != INF && rowMin != 0)
                 {
                     for (int j = 0; j < n; j++)
@@ -153,14 +157,12 @@ class Program
                     cost += rowMin;
                 }
             }
-            // Column reduction
             for (int j = 0; j < n; j++)
             {
                 double colMin = INF;
                 for (int i = 0; i < n; i++)
                     if (matrix[i, j] < colMin)
                         colMin = matrix[i, j];
-
                 if (colMin != INF && colMin != 0)
                 {
                     for (int i = 0; i < n; i++)
@@ -180,22 +182,19 @@ class Program
                     sub[i, j] = matrix[indices[i], indices[j]];
             return sub;
         }
-        public static void BranchBound(double[,] matrix, int startIndex, int timeLimitSec = 10)
+        public static (Route, Route, double) BranchBound(double[,] matrix, int startIndex)
         {
+            int timeLimitSec = 10;
             int n = matrix.GetLength(0);
             var allPlaces = Enumerable.Range(0, n).Where(i => i != startIndex).ToArray();
             double bestMax = INF;
-            List<int> best1 = null, best2 = null;
-            List<int> bestPath1 = null, bestPath2 = null;
-            double bestCost1 = 0, bestCost2 = 0;
-
+            Route bestRoute1 = null, bestRoute2 = null;
             var sw = Stopwatch.StartNew();
             int maxMask = 1 << allPlaces.Length;
             for (int mask = 1; mask < maxMask / 2; mask++)
             {
                 if (sw.Elapsed.TotalSeconds > timeLimitSec)
                     break;
-
                 var bus1 = new List<int> { startIndex };
                 var bus2 = new List<int> { startIndex };
                 for (int i = 0; i < allPlaces.Length; i++)
@@ -205,50 +204,37 @@ class Program
                     else
                         bus2.Add(allPlaces[i]);
                 }
-
                 if (bus1.Count < 2 || bus2.Count < 2)
                     continue;
-
                 var subMatrix1 = BuildSubMatrix(matrix, bus1);
                 var subMatrix2 = BuildSubMatrix(matrix, bus2);
+                var route1 = SolveTSP(subMatrix1, 0);
+                var route2 = SolveTSP(subMatrix2, 0);
 
-                var (path1, cost1) = SolveTSP(subMatrix1, 0);
-                var (path2, cost2) = SolveTSP(subMatrix2, 0);
-
-                double maxCost = Math.Max(cost1, cost2);
+                double maxCost = Math.Max(route1.Distance, route2.Distance);
                 if (maxCost < bestMax)
                 {
                     bestMax = maxCost;
-                    best1 = new List<int>(bus1);
-                    best2 = new List<int>(bus2);
-                    bestPath1 = path1.Select(idx => bus1[idx]).ToList();
-                    bestPath2 = path2.Select(idx => bus2[idx]).ToList();
-                    bestCost1 = cost1;
-                    bestCost2 = cost2;
+                    // Perkeliam submatricos indeksus į originalius
+                    bestRoute1 = new Route { Path = route1.Path.Select(idx => bus1[idx]).ToList(), Distance = route1.Distance };
+                    bestRoute2 = new Route { Path = route2.Path.Select(idx => bus2[idx]).ToList(), Distance = route2.Distance };
                 }
             }
 
-            Console.WriteLine("\nOptimalūs maršrutai (Branch and Bound):");
-            Console.WriteLine($"Autobusiukas 1 ({bestCost1:F2}): {string.Join(" -> ", bestPath1.Select(i => i + 1))}");
-            Console.WriteLine($"Autobusiukas 2 ({bestCost2:F2}): {string.Join(" -> ", bestPath2.Select(i => i + 1))}");
-            Console.WriteLine($"Minimalus maksimalus ilgis: {bestMax:F2}");
+            return (bestRoute1, bestRoute2, sw.Elapsed.TotalSeconds);
         }
-
-        public static (List<int> path, double cost) SolveTSP(double[,] matrix, int start)
+        public static Route SolveTSP(double[,] matrix, int start)
         {
             int n = matrix.GetLength(0);
             var pq = new PriorityQueue<Node, double>();
             var path = new List<int> { start };
             var root = new Node(matrix, path, 0, -1, start);
             pq.Enqueue(root, root.Cost);
-
             double minCost = INF;
             List<int> bestPath = null;
-
             while (pq.Count > 0)
             {
                 Node min = pq.Dequeue();
-
                 if (min.Level == n - 1)
                 {
                     min.Path.Add(start);
@@ -256,11 +242,10 @@ class Program
                     if (totalCost < minCost)
                     {
                         minCost = totalCost;
-                        bestPath = new List<int>(min.Path);
+                        bestPath = [.. min.Path];
                     }
                     continue;
                 }
-
                 for (int j = 0; j < n; j++)
                 {
                     if (min.reducedMatrix[min.Vertex, j] != INF)
@@ -268,15 +253,18 @@ class Program
                         double travelCost = matrix[min.Vertex, j];
                         Node child = new Node(min.reducedMatrix, min.Path, min.Level + 1, min.Vertex, j);
                         child.Cost += min.Cost + travelCost;
-
                         if (child.Cost < minCost)
                             pq.Enqueue(child, child.Cost);
                     }
                 }
             }
-
-            return (bestPath, minCost);
+            return new Route
+            {
+                Path = bestPath ?? new List<int>(),
+                Distance = minCost
+            };
         }
+
     }
 public class IO
     {
@@ -369,10 +357,8 @@ public class IO
 
             double[] x1 = route1.Path.Select(i => places[i].X).ToArray();
             double[] y1 = route1.Path.Select(i => places[i].Y).ToArray();
-
             double[] x2 = route2.Path.Select(i => places[i].X).ToArray();
             double[] y2 = route2.Path.Select(i => places[i].Y).ToArray();
-
             var scatter1 = plt.Add.Scatter(x1, y1, Color.FromColor(System.Drawing.Color.Red));
             scatter1.LegendText = "Bus 1";
             var scatter2 = plt.Add.Scatter(x2, y2, Color.FromColor(System.Drawing.Color.Blue));
