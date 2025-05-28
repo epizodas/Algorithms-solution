@@ -13,28 +13,34 @@ class Program
     {
         string filePath = "C:/Users/padel/Desktop/algorai/InzinerinisProj/IP_places_data_2025.xlsx";
         var places = IO.ReadFile(filePath);
-        var matrixFull = IO.BuildMatrix(places, places.Count);
-
         int startIndex = places.FindIndex(p => p.Number == 5);
-        //var (bus1, bus2) = Solver.Greedy(matrixFull, startIndex);
+
+        var matrixFull = IO.BuildMatrix(places, places.Count);
+        var (bus1, bus2) = Solver.Greedy(matrixFull, startIndex);
         //IO.PrintRoute(bus1, places, "Autobusiukas 1");
         //IO.PrintRoute(bus2, places, "Autobusiukas 2");
-        //IO.PlotRoutes(bus1, bus2, places, "marsrutai1.png");
+        IO.PlotRoutes(bus1, bus2, places, "marsrutai_gr.png");
 
-        var matrix = IO.BuildMatrix(places, 11);
-        var (bb_bus1, bb_bus2, time) = Solver.BranchBound(matrix, startIndex);
-
-        IO.PlotRoutes(bb_bus1, bb_bus2, places, "marsrutai2.png");
+        var matrix_bb = IO.BuildMatrix(places, 11);
+        var (bb_bus1, bb_bus2, time) = Solver.BranchBound(matrix_bb, startIndex);
+        IO.PlotRoutes(bb_bus1, bb_bus2, places, "marsrutai_bb.png");
         Console.WriteLine(time);
         Console.WriteLine("Bus1 = " + bb_bus1.Distance);
         Console.WriteLine("Bus2 = " + bb_bus2.Distance);
 
+        var matrix_sa = IO.BuildMatrix(places, 18);
+        var (sa_bus1, sa_bus2, sa_time) = Solver.SimulatedAnnealing(matrix_sa, startIndex, 60);
+        IO.PlotRoutes(sa_bus1, sa_bus2, places, "marsrutai_sa.png");
+        Console.WriteLine($"SA Laikas: {sa_time:F2}s");
+        Console.WriteLine("Bus1 = " + sa_bus1.Distance);
+        Console.WriteLine("Bus2 = " + sa_bus2.Distance);
     }
     public static class Solver
     {
         // 1 dalis
         public static (Route, Route) Greedy(double[,] matrix, int startIndex)
         {
+            var sw = Stopwatch.StartNew();
             int n = matrix.GetLength(0);
             bool[] visited = new bool[n];
             visited[startIndex] = true;
@@ -83,6 +89,7 @@ class Program
             route1.Path.Add(startIndex);
             route2.Path.Add(startIndex);
 
+            Console.WriteLine("time: " + sw.Elapsed.TotalSeconds);
             return (route1, route2);
         }
         private static int FindNearest(double[,] matrix, int from, bool[] visited)
@@ -90,7 +97,6 @@ class Program
             int n = matrix.GetLength(0);
             double minDist = double.MaxValue;
             int nearest = -1;
-
             for (int i = 0; i < n; i++)
             {
                 if (!visited[i] && matrix[from, i] < minDist)
@@ -99,7 +105,6 @@ class Program
                     nearest = i;
                 }
             }
-
             return nearest;
         }
 
@@ -265,8 +270,67 @@ class Program
             };
         }
 
+        // 3 dalis
+        public static (Route, Route, double) SimulatedAnnealing(double[,] matrix, int startIndex, int maxSeconds = 60)
+        {
+            var sw = Stopwatch.StartNew();
+            int n = matrix.GetLength(0);
+            var rnd = new Random();
+            var all = Enumerable.Range(0, n).Where(i => i != startIndex).ToList();
+            var currentSplit = new HashSet<int>(all.OrderBy(_ => rnd.Next()).Take(n / 2));
+            var bestSplit = new HashSet<int>(currentSplit);
+            var (bestR1, bestR2) = EvaluateSplit(currentSplit, matrix, startIndex);
+            double bestCost = Math.Max(bestR1.Distance, bestR2.Distance);
+            double temperature = 1000.0;
+            double coolingRate = 0.995;
+            while (sw.Elapsed.TotalSeconds < maxSeconds && temperature > 0.1)
+            {
+                var newSplit = new HashSet<int>(currentSplit);
+                int toSwap = all[rnd.Next(all.Count)];
+                if (newSplit.Contains(toSwap))
+                    newSplit.Remove(toSwap);
+                else
+                    newSplit.Add(toSwap);
+                var (r1, r2) = EvaluateSplit(newSplit, matrix, startIndex);
+                double cost = Math.Max(r1.Distance, r2.Distance);
+                double delta = cost - bestCost;
+                if (delta < 0 || rnd.NextDouble() < Math.Exp(-delta / temperature))
+                {
+                    currentSplit = newSplit;
+                    if (cost < bestCost)
+                    {
+                        bestCost = cost;
+                        bestSplit = [.. newSplit];
+                        bestR1 = r1;
+                        bestR2 = r2;
+                    }
+                }
+                temperature *= coolingRate;
+            }
+            return (bestR1, bestR2, sw.Elapsed.TotalSeconds);
+        }
+        private static (Route, Route) EvaluateSplit(HashSet<int> group1, double[,] matrix, int startIndex)
+        {
+            var all = Enumerable.Range(0, matrix.GetLength(0)).Where(i => i != startIndex).ToList();
+            var bus1 = new List<int> { startIndex };
+            var bus2 = new List<int> { startIndex };
+            foreach (var i in all)
+            {
+                if (group1.Contains(i)) bus1.Add(i);
+                else bus2.Add(i);
+            }
+            if (bus1.Count < 2) bus1.Add(bus2[1]);
+            if (bus2.Count < 2) bus2.Add(bus1[1]);
+            var m1 = BuildSubMatrix(matrix, bus1);
+            var m2 = BuildSubMatrix(matrix, bus2);
+            var r1 = SolveTSP(m1, 0);
+            var r2 = SolveTSP(m2, 0);
+            r1.Path = r1.Path.Select(i => bus1[i]).ToList();
+            r2.Path = r2.Path.Select(i => bus2[i]).ToList();
+            return (r1, r2);
+        }
     }
-public class IO
+    public class IO
     {
         public static List<Place> ReadFile(string filePath)
         {

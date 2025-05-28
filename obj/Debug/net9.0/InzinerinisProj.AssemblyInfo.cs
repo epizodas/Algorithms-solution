@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("InzinerinisProj")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+759dccded3fe3945085106876d26170d7cb29d00")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+247e0df10882518a423296c0765d0614b05e9758")]
 [assembly: System.Reflection.AssemblyProductAttribute("InzinerinisProj")]
 [assembly: System.Reflection.AssemblyTitleAttribute("InzinerinisProj")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
